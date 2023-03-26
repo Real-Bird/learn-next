@@ -1,6 +1,41 @@
-import '@/styles/globals.css'
-import type { AppProps } from 'next/app'
+import NavBar from "@components/NavBar";
+import ThemeContext from "@components/themeContext";
+import type { AppProps } from "next/app";
+import { useState } from "react";
+import "@styles/globals.css";
+
+interface ThemesProps {
+  [key: string]: { background: string; color: string };
+}
+
+const themes: ThemesProps = {
+  dark: {
+    background: "black",
+    color: "white",
+  },
+  light: {
+    background: "white",
+    color: "black",
+  },
+};
 
 export default function App({ Component, pageProps }: AppProps) {
-  return <Component {...pageProps} />
+  const [theme, setTheme] = useState("light");
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  };
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      <div
+        style={{
+          width: "100%",
+          minHeight: "100vh",
+          ...themes[theme],
+        }}
+      >
+        <NavBar />
+        <Component {...pageProps} />
+      </div>
+    </ThemeContext.Provider>
+  );
 }
