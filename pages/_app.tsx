@@ -3,6 +3,7 @@ import ThemeContext from "@components/themeContext";
 import type { AppProps } from "next/app";
 import { useState } from "react";
 import "@styles/globals.css";
+import Head from "next/head";
 
 interface ThemesProps {
   [key: string]: { background: string; color: string };
@@ -26,6 +27,9 @@ export default function App({ Component, pageProps }: AppProps) {
   };
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      <Head>
+        <link rel="manifest" href="/manifest.json" />
+      </Head>
       <div
         style={{
           width: "100%",
