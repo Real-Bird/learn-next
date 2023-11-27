@@ -205,3 +205,107 @@ value가 `truthy`일 경우 key로 받은 클래스명을 적용한다.
 ### 2-5. Other styling solutions
 
 이 외에 `CSS-in-JS` 방식의 `styled-components`, `styled-jsx`, `emotion` 등이나 `SASS`가 있다.
+
+## 3. Optimizing Fonts and Images
+
+이 장에서는 `next/font`와 `next/image` 적용과 최적화 방법을 배운다.
+
+### 3-1. Why optimize fonts?
+
+기본 폰트가 아닌 사용자 정의 폰트는 외부에서 로드하는 시간이 필요하다. 그 과정에서 [Cumulative Layout Shift(CLS)](https://web.dev/articles/cls?hl=ko) 점수를 높여 나쁜 사용자 경험을 제공할 수도 있다.
+
+> **Cumulative Layout Shift**란, 구글에서 레이아웃 변경을 측정하는 지표이다. 요소의 이동이나 변경이 많을수록 높은 점수가 측정된다.
+
+`Next`에서는 `next/font`를 이용해 빌드 시점에 폰트를 다운로드하여 자동 최적화한다.
+
+### 3-2. Adding a primary font
+
+`next/font/google`에서 `Inter` 폰트를 가져온다.
+
+```ts
+// app/ui/fonts.ts
+import { Inter } from 'next/font/google';
+
+export const inter = Inter({ subsets: ['latin'] });
+```
+
+폰트를 `layout`의 `body`에 추가하여 기본 폰트로 설정한다.
+
+```tsx
+import { inter } from '@/app/ui/fonts';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className={`${inter.className} antialiased`}>{children}</body>
+    </html>
+  );
+}
+```
+
+`antialiased`는 `Tailwind` 코드로, 폰트를 부드럽게 처리하는 클래스이다. 멋지라고 넣었다고 한다.
+
+### 3-3. Why optimize images?
+
+이미지 파일을 수동으로 지정할 경우 다양한 부분을 고려하기 어려워 진다.
+
+- 다양한 화면 크기에서 이미지가 반응하는지 확인해야 한다.
+- 다양한 디바이스에 맞는 이미지 크기를 지정해야 한다.
+- 이미지 로드 시 레이아웃 이동을 방지해야 한다.
+- 사용자 뷰포트 외부에 있는 이미지를 지연 로드해야 한다.
+
+이런 포인트를 `next/image` 모듈의 `<Image>` 컴포넌트를 이용해 자동으로 최적화한다.
+
+- 이미지가 로드될 때 레이아웃이 자동으로 바뀌는 것을 방지
+- 뷰포트가 작은 기기에 큰 이미지가 전송되지 않도록 이미지 크기 조정
+- 기본적으로 이미지 지연 로딩(이미지가 뷰포트에 들어올 때 로드됨)
+- 브라우저에서 지원하는 경우 WebP 및 AVIF와 같은 최신 형식의 이미지 제공
+
+```tsx
+import Image from 'next/image';
+
+export default function Page() {
+  return (
+    // ...
+    <div className="flex items-center justify-center p-6 md:w-3/5 md:px-28 md:py-12">
+      <Image
+        src="/hero-desktop.png"
+        width={1000}
+        height={760}
+        className="hidden md:block"
+        alt="Screenshots of the dashboard project showing desktop version"
+      />
+    </div>
+    //...
+  );
+}
+```
+
+이미지가 로드되는 동안 레이아웃이 변경되지 않도록 `width`와 `height`를 지정하고, 원본과 같은 비율로 설정하는 것이 좋다.
+
+`width`와 `height`를 비율에 맞춰 자동으로 설정하려면 이미지를 import해 이미지 컴포넌트에 제공한다.
+
+```tsx
+import Image from 'next/image';
+import heroMobile from '../public/hero-mobile.png';
+
+export default function Page() {
+  return (
+    // ...
+    <div className="flex items-center justify-center p-6 md:w-3/5 md:px-28 md:py-12">
+      <Image
+        src={heroMobile}
+        className="block md:hidden"
+        alt="Screenshots of the dashboard project showing mobile version"
+      />
+    </div>
+    //...
+  );
+}
+```
+
+이미지나 폰트 최적화에 관한 자세한 정보는 [Image Optimization](https://nextjs.org/docs/app/building-your-application/optimizing/images)과 [Font Optimization](https://nextjs.org/docs/app/building-your-application/optimizing/fonts)를 참고한다.
