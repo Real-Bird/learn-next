@@ -331,3 +331,44 @@ export default function Page() {
 나의 실행 환경에서는 페이지 이동마다 `layout`도 리렌더링되던데...게다가 `SPA`가 아닌 `MPA`처럼 동작한다. 뭔가 조치가 더 필요한 건가? 약간의 의문 추가.
 
 `🗂app/layout.tsx`는 **Root layout**으로, 모든 페이지가 공유하는 필수 레이아웃이다. 여기에서 `<html>`과 `<body>` 태그를 수정하거나 `metadata`를 추가할 수도 있다.
+
+## 5. Navigating Between Pages
+
+페이지 간의 이동을 다루는 장이다. 위에서 품었던 의문이 곧바로 해결되었다.
+
+### 5.1 Link Component
+
+`dashboard`의 하위 페이지 간 이동은 `<a>` 태그를 이용하고 있었다. 이동마다 전체 페이지가 새로고침되는 원인이었다. `next/link`의 `<Link>` 컴포넌트로 대체하면 새로고침 없이 이동한다.
+
+```tsx
+import Link from 'next/link';
+
+export default function NavLinks() {
+  return (
+    <>
+      {/* ... */}
+      <Link key={link.name} href={link.href}>
+        <LinkIcon className="w-6" />
+        <p className="hidden md:block">{link.name}</p>
+      </Link>
+      {/* ... */}
+    </>
+  );
+}
+```
+
+### 5.2 Automatic code-splitting and prefetching
+
+`Next.js`는 자동으로 코드를 분할한다. 분할된 코드는 고립되었다는 의미이며, 이 페이지에서 에러가 발생해도 다른 페이지는 정상 동작한다. 또한, `<Link>` 컴포넌트가 동작할 때마다 백그라운드에서 라우트의 코드를 `prefetch`한다. 백그라운드에서 미리 로드된 목적지 페이지는 사용자가 클릭했을 때 거의 즉시 전환된다.
+
+### 5.3 Pattern: Showing active links
+
+일반적인 UI는 현재 페이지와 같은 링크를 활성화 상태로 보여준다. 그러기 위해서 현재 `pathname`을 알아야 한다. `next/navigation`의 `usePathname`을 사용해 `pathname`에 접근한다.
+
+```tsx
+'use client';
+
+import { usePathname } from 'next/navigation';
+```
+
+훅은 `Client Component`에서 사용하므로 최상단에 `use client`를 명시해야 한다.
