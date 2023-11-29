@@ -309,3 +309,25 @@ export default function Page() {
 ```
 
 이미지나 폰트 최적화에 관한 자세한 정보는 [Image Optimization](https://nextjs.org/docs/app/building-your-application/optimizing/images)과 [Font Optimization](https://nextjs.org/docs/app/building-your-application/optimizing/fonts)를 참고한다.
+
+## 4. Creating Layouts and Pages
+
+새로운 페이지를 만드는 장이다. 파일 시스템 라우트를 사용하여 파일과 폴더의 역할과 `layout`을 이해하는 것이 주 목표이다.
+
+### 4-1. Nested routing
+
+파일 시스템 라우팅에서 폴더는 `URL`의 path에 따라 구분하는 역할을 한다. 최상위인 `app`은 `root(/)`를 의미하고, 하위 폴더들은 `pathname`을 의미한다. 즉, `/`로 구분되는 영역이다. 예를 들어, `localhost / dashboard / invoices` 경로라면, `🗂app/🗂dashboard/🗂invoices`이다.
+
+각각의 폴더는 `layout.tsx`과 `page.tsx` 파일을 갖는다. `page.tsx`는 라우트에 해당하는 view 컴포넌트를 내보내는 역할을 한다. `🗂app/🗂dashboard/page.tsx`를 만들고 `localhost:3000/dashboard`에 접근하면 해당 컴포넌트가 렌더링된 화면을 볼 수 있다.
+
+![챕터4 dashboard page](/assets/4-chap-4-dashboard-page-css.png '챕터4 dashboard page')
+
+`🗂app/🗂dashboard/sidebar.tsx`라는 파일을 만들었을 때, `/dashboard/sidebar`로 접근할 수 있는 게 아닌가 하는 의문이 들었다. 하지만 `Next.js`에서는 `page`와 ui 컴포넌트, 테스트 파일 등이 공존 가능한 [colocation](https://nextjs.org/docs/app/building-your-application/routing#colocation)을 허용한다. 오직 `page.tsx` 파일이 있어야 라우트로 접근할 수 있다.
+
+### 4-2. layout
+
+`layout.tsx` 파일은 여러 페이지에서 같은 레이아웃을 공유하는 역할이다. `layout`의 이점 중 하나는 다른 페이지 컴포넌트를 업데이트할 때 `layout`은 리렌더링을 하지 않는다는 것이다. [partial rendering](https://nextjs.org/docs/app/building-your-application/routing/linking-and-navigating#3-partial-rendering)이라고 부른다고 한다.
+
+나의 실행 환경에서는 페이지 이동마다 `layout`도 리렌더링되던데...게다가 `SPA`가 아닌 `MPA`처럼 동작한다. 뭔가 조치가 더 필요한 건가? 약간의 의문 추가.
+
+`🗂app/layout.tsx`는 **Root layout**으로, 모든 페이지가 공유하는 필수 레이아웃이다. 여기에서 `<html>`과 `<body>` 태그를 수정하거나 `metadata`를 추가할 수도 있다.
