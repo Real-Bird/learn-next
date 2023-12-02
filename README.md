@@ -372,3 +372,85 @@ import { usePathname } from 'next/navigation';
 ```
 
 훅은 `Client Component`에서 사용하므로 최상단에 `use client`를 명시해야 한다.
+
+## 6. Fetching Data
+
+`Next.js`는 라우트를 이용해 API 엔드포인트를 제공하여 서드 파티 프로그램이나 서버 없이도 데이터를 패칭할 수 있다. 스킵했지만, 앞선 장에서 `Vercel`이 제공하는 서비스를 이용해 `postgres` DB를 생성했는데, `prisma`같은 `ORM`을 통해 관계형 DB를 호출할 수 있다.
+
+> `ORM`이란?
+> Object Relational Mapping의 약자로, 구현한 객체와 관계형 DB의 불일치를 자동으로 매핑한 SQL문을 생성해 호환가능하게 해주는 기술이다.
+
+데이터 패치를 하기에 앞서, `Next.js`는 기본적으로 `React Server Component`를 사용하는데, 몇 가지 이점을 알려준다.
+
+- 프로미스를 지원하여 `useState`나 `useEffect`, 데이터 패치 라이브러리, 추가 API 계층 없이 `async/await`을 사용하여 데이터를 가져올 수 있다.
+- 서버에서 실행되기 때문에 비용이 많이드는 로직은 서버에서 실행하고, 결과만 클라이언트로 전송할 수 있다.
+
+### 6-1. Fetching data for the dashboard overview page
+
+제공해준 dashboard 페이지의 코드를 보자.
+
+```tsx
+import { Card } from '@/app/ui/dashboard/cards';
+import RevenueChart from '@/app/ui/dashboard/revenue-chart';
+import LatestInvoices from '@/app/ui/dashboard/latest-invoices';
+import { lusitana } from '@/app/ui/fonts';
+
+export default async function Page() {
+  return (
+    <main>
+      <h1 className={`${lusitana.className} mb-4 text-xl md:text-2xl`}>
+        Dashboard
+      </h1>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* <Card title="Collected" value={totalPaidInvoices} type="collected" /> */}
+        {/* <Card title="Pending" value={totalPendingInvoices} type="pending" /> */}
+        {/* <Card title="Total Invoices" value={numberOfInvoices} type="invoices" /> */}
+        {/* <Card
+          title="Total Customers"
+          value={numberOfCustomers}
+          type="customers"
+        /> */}
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-4 lg:grid-cols-8">
+        {/* <RevenueChart revenue={revenue}  /> */}
+        {/* <LatestInvoices latestInvoices={latestInvoices} /> */}
+      </div>
+    </main>
+  );
+}
+```
+
+페이지 컴포넌트는 `async function`으로 되어 있다. 이는 `await`을 곧장 사용할 수 있음을 의미한다. 주석 처리된 컴포넌트들은 모두 데이터를 받는다. 데이터를 패치해 보자.
+
+```tsx
+// ...
+import { fetchRevenue } from '@/app/lib/data';
+
+export default async function Page() {
+  const revenue = await fetchRevenue();
+  // ...
+}
+```
+
+컴포넌트에서 `await`을 사용하는 게 매우 신기하다. ts 에러가 발생하지만 런타임에는 아무 지장없이 잘 실행된다.
+
+![챕터6 dashboard page](/assets/6-chap-6-dashboard-page-css.png '챕터6 dashboard page')
+
+여기서 두 가지 주의해야 할 사항이 있다고 한다.
+
+1. 데이터 요청이 의도치 않게 서로를 차단해 **요청 폭포수**를 만들고 있다.
+2. 다른 하나는 `Next.js`가 성능 개선을 위해 기본적으로 prerender하여 정적 렌더링을 하기 때문에 데이터 변화가 있어도 동적으로 반영되지 않는다는 점이다.
+
+이 장에서는 1번을 살피고, 다음 장에서 2번을 살핀다.
+
+### 6-2. What are request waterfalls?
+
+`waterfall`은 **이전 요청의 완료 여부에 따라 달라지는 일련의 네트워크 요청을 의미**한다. 여기서는 앞선 데이터 패칭이 완료 되어야 다음 데이터 패칭이 이루어지는 것이다.
+
+![](https://nextjs.org/_next/image?url=%2Flearn%2Fdark%2Fsequential-parallel-data-fetching.png&w=1920&q=75&dpl=dpl_GGugRB3M3WE9C8xcmftCsUL7LkbG)
+
+이전 패칭의 결과가 후행 패치에 영향을 미칠 경우에는 나쁘지 않은 패턴이다. 하지만 앞선 주의사항 대로 성능에 영향을 미칠 수 있다.
+
+### 6-3. Parallel data fetching
+
+여러 데이터 요청이 동시에 발생하는 경우 `JS`가 제공하는 [Promise.all](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all)이나 [Promise.allSettled](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled)를 사용하여 병행 처리할해 성능을 향상시킬 수 있다. 또한, 자바스크립트가 제공하는 함수를 사용하기 때문에 다른 프레임워크에서도 재사용 가능하다.
