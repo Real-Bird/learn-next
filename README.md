@@ -454,3 +454,84 @@ export default async function Page() {
 ### 6-3. Parallel data fetching
 
 여러 데이터 요청이 동시에 발생하는 경우 `JS`가 제공하는 [Promise.all](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all)이나 [Promise.allSettled](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled)를 사용하여 병행 처리할해 성능을 향상시킬 수 있다. 또한, 자바스크립트가 제공하는 함수를 사용하기 때문에 다른 프레임워크에서도 재사용 가능하다.
+
+## 7. Static and Dynamic Rendering
+
+이전 챕터에서 문제삼은 주의사항 2번을 해결하는 챕터이다. 정적 렌더링은 빌드나 재검증(revalidate) 중 데이터를 가져오고 렌더링하는 과정이다. 이 결과물을 CDN에 배포해 캐싱한다.
+
+![](https://nextjs.org/_next/image?url=%2Flearn%2Fdark%2Fstatic-site-generation.png&w=1920&q=75&dpl=dpl_GGugRB3M3WE9C8xcmftCsUL7LkbG)
+
+이러한 방식은 다음과 같은 이점이 있다.
+
+- 더 빠른 웹사이트 : 미리 렌더링된 콘텐츠를 캐싱하여 배포하므로 전 세계 사용자가 웹사이트에 더 빠르고 안정적으로 액세스할 수 있다.
+- 서버 부하 감소 : 콘텐츠가 캐시되므로 서버에서 각 사용자 요청에 대해 콘텐츠를 동적으로 생성할 필요가 없다.
+- SEO : 미리 렌더링된 콘텐츠는 페이지가 로드될 때 이미 콘텐츠를 사용할 수 있으므로 검색 엔진 크롤러가 색인을 생성하기가 더 쉽다. 이는 검색 엔진 순위 향상으로 이어질 수 있다.
+
+따라서 정적 렌더링은 데이터 변화가 없거나 적은 블로그나 제품 페이지 등에 적합하다. 그러나 `dashboard`와 같이 데이터에 변화가 잦은 페이지에는 적합하지 않을 수 있다.
+
+이와 반대되는 개념이 **동적 렌더링(Dynamic Rendering)**이다.
+
+### 7-1. What is Dynamic Rendering?
+
+동적 렌더링은 사용자가 페이지에 방문했을 때 렌더링하여 콘텐츠를 생성한다. 이점은 다음과 같다.
+
+- 실시간 데이터 : 애플리케이션에서 실시간 또는 자주 업데이트되는 데이터를 표시할 수 있다. 데이터가 자주 변경되는 애플리케이션에 이상적이다.
+- 사용자별 콘텐츠 : 대시보드나 사용자 프로필과 같은 개인화된 콘텐츠를 제공하고 사용자 상호 작용에 따라 데이터를 업데이트하는 것이 더 쉽다.
+- 요청 시간 정보 : 동적 렌더링을 사용하면 쿠키나 URL 검색 매개변수와 같이 요청 시점에만 알 수 있는 정보에 액세스할 수 있다.
+
+### 7-2. Using Dynamic Rendering
+
+데이터 패치 함수 초입에 `unstable_noStore`를 불러와 적용한다.
+
+```ts
+// ...
+import { unstable_noStore as noStore } from 'next/cache';
+
+export async function fetchRevenue() {
+  noStore();
+  // ...fetch logic
+}
+
+export async function fetchLatestInvoices() {
+  noStore();
+  // ...fetch logic
+}
+
+export async function fetchCardData() {
+  noStore();
+  // ...fetch logic
+}
+
+export async function fetchFilteredInvoices(
+  query: string,
+  currentPage: number,
+) {
+  noStore();
+  // ...fetch logic
+}
+
+export async function fetchInvoicesPages(query: string) {
+  noStore();
+  // ...fetch logic
+}
+
+export async function fetchFilteredCustomers(query: string) {
+  noStore();
+  // ...fetch logic
+}
+
+export async function fetchInvoiceById(query: string) {
+  noStore();
+  // ...fetch logic
+}
+```
+
+`unstable_noStore`는 실험적인 API이므로 추후 변경될 수도 있다고 한다. 안정적인 API는 [Route Segment Config](https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config)의 `export const dynamic = "force-dynamic"`를 사용한다.
+
+```tsx
+export const dynamic = 'force-dynamic';
+
+export default function MyComponent() {}
+```
+
+동적 렌더링이 가져오는 문제는 **느리게 도착하는 데이터에 의해 앱의 성능이 결정된다**는 점이다. 이를 해결하는 과정을 다음 챕터에서 안내한다.
