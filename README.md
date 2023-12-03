@@ -535,3 +535,88 @@ export default function MyComponent() {}
 ```
 
 동적 렌더링이 가져오는 문제는 **느리게 도착하는 데이터에 의해 앱의 성능이 결정된다**는 점이다. 이를 해결하는 과정을 다음 챕터에서 안내한다.
+
+## 8. Streaming
+
+느린 데이터 가져오기 환경을 개선하는 방법을 알려주는 장이다.
+
+### 8-1. What is streaming?
+
+스트리밍(streaming)은 **데이터를 '작은 조각(chunk)'로 분할하여 서버에서 준비되는 대로 클라이언트 측에 보내는 전송 방식**을 말한다. 느린 데이터 요청으로 인한 앱 전체가 차단되는 것을 방지하고, 전체 데이터 패칭이 완료되지 않아도 일부 페이지를 조작할 수 있도록 한다.
+
+![](https://nextjs.org/_next/image?url=%2Flearn%2Fdark%2Fserver-rendering-with-streaming-chart.png&w=1920&q=75&dpl=dpl_GGugRB3M3WE9C8xcmftCsUL7LkbG)
+
+리액트 컴포넌트는 하나의 청크로 간주될 수 있기 때문에 스트리밍을 적용하기에 좋다. 페이지에서는 `loading.tsx`을, 컴포넌트에서는 `<Suspense>`를 사용하여 스트리밍을 적용할 수 있다.
+
+### 8-2. Using loading.tsx
+
+페이지 전체 로딩을 적용하는 방법은 매우 간단하다. 라우트 경로에 `loading.tsx`를 추가한다.
+
+```tsx
+// app/dashboard/loading.tsx
+export default function Loading() {
+  return <div>Loading...</div>;
+}
+```
+
+의도적으로 데이터 패치 중 하나를 느리게 만들면 로딩 화면이 보인다.
+
+![챕터 8 스트리밍 로딩](/assets/8-chap-8-loading.gif '챕터 8 스트리밍 로딩')
+
+제공한 스켈레톤으로 로딩을 교체했는데, 작은 버그가 하나 있다. `dashboard` 바로 아래에 `loading`을 생성한 탓에 하위 라우트인 `dashboard/invoices`와 `dashboard/customers`에서도 로딩이 적용된다. `dashboard`에만 적용하려면 하위에 `(overview)` 폴더를 추가하고, `page.tsx`와 `loading.tsx`를 옮긴다.
+
+```
+🗂app/
+  └─🗂dashboard/
+    ├─layout.tsx
+    ├─🗂(overview)
+    │ ├─loading.tsx
+    │ └─page.tsx
+    ├─🗂invoices/
+    └─🗂customers/
+```
+
+이렇게 경로 나누는 방식이 [Route Groups](https://nextjs.org/docs/app/building-your-application/routing/route-groups)이며, 괄호로 작성한 폴더를 경로에 포함시키지 않으면서 나눌 수 있다. 예를 들어, 여기서 사용한 `loading.tsx`는 `(overview)` 하위에 있는 `page.tsx`에만 적용된다.
+
+### 8-3. Streaming a component
+
+위의 방식이 전체 페이지 스트리밍에 해당한다면, `<Suspense>`는 데이터가 필요한 특정 컴포넌트만 지연 로딩하는 방식이다. 지연 로딩할 부분을 `<Suspense>`로 감싸고 지연되는 동안 보여줄 `fallback`을 추가한다.
+
+`dashboard`에서 하나의 요청을 의도적으로 지연시켜 전체 페이지에 로딩이 발생했다. 해당 요청을 제거하고, 해당 컴포넌트를 `<Suspense>`로 감싼다.
+
+```diff
+import RevenueChart from '@/app/ui/dashboard/revenue-chart';
++ import { fetchLatestInvoices, fetchCardData } from '@/app/lib/data';  // remove fetchRevenue
+import { Suspense } from 'react';
+import { RevenueChartSkeleton } from '@/app/ui/skeletons';
+
+export default async function Page() {
+-  const revenue = await fetchRevenue // delete this line
+  // ...
+
+  return (
+    <main>
+      <h1 className={`${lusitana.className} mb-4 text-xl md:text-2xl`}>
+        Dashboard
+      </h1>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* ...Cards */}
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-4 lg:grid-cols-8">
++        <Suspense fallback={<RevenueChartSkeleton />}>
++          <RevenueChart />
++        </Suspense>
+        {/* ...*/}
+      </div>
+    </main>
+  );
+}
+```
+
+특정 컴포넌트의 요청이 끝날 때까지 전체 로딩하던 화면에서 특정 컴포넌트만 지연 로딩되는 화면으로 바뀌었다.
+
+![챕터 8 스트리밍 서스펜스](/assets/8-chap-8-2-suspense.gif '챕터 8 스트리밍 서스펜스')
+
+### 8-3. Deciding where to place your Suspense boundaries
+
+`Suspense`의 경계는 원하는 사용자 경험, 콘텐츠 우선순위, 컴포넌트가 의존하는 데이터 패칭에 따라 달라진다. 정답은 없지만 일반적으로 데이터가 필요한 컴포넌트를 `Suspense`로 감싸는 게 낫고, 필요한 경우 전체 페이지를 스트리밍한다.
