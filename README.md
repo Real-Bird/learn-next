@@ -620,3 +620,145 @@ export default async function Page() {
 ### 8-3. Deciding where to place your Suspense boundaries
 
 `Suspense`의 경계는 원하는 사용자 경험, 콘텐츠 우선순위, 컴포넌트가 의존하는 데이터 패칭에 따라 달라진다. 정답은 없지만 일반적으로 데이터가 필요한 컴포넌트를 `Suspense`로 감싸는 게 낫고, 필요한 경우 전체 페이지를 스트리밍한다.
+
+## 9. Adding Search and Pagination
+
+이 장에서는 URL search params을 통한 검색과 pagination을 학습한다.
+
+### 9-1. Why use URL search params?
+
+URL search params를 이용하여 검색을 하면 몇 가지 이점이 있다.
+
+- 북마크 및 공유 가능 : 검색 정보가 URL에 담겨 있기 때문에 사용자는 북마크에 추가해 나중에 참조하거나 공유하기 쉽다.
+- 서버 측 렌더링과 초기 로드 : URL 매개변수를 서버에서 직접 조작하여 초기 상태 렌더링을 더 처리하기 쉽다.
+- 분석 및 추적: 검색 쿼리와 필터를 URL에 직접 넣으면 추가적인 클라이언트 측 로직 없이도 사용자 행동을 더 쉽게 추적할 수 있다.
+
+URL search params를 이용하는데 `Next.js`의 다음 훅들을 사용한다.
+
+- [`useSearchParams`](https://nextjs.org/docs/app/api-reference/functions/use-search-params) : 현재 URL의 매개변수에 액세스한다. 예를 들어, `/dashboard/invoices?page=1&query=pending`에 대한 검색 매개 변수는`{page: '1', query: 'pending'}`이다.
+- [`usePathname`](https://nextjs.org/docs/app/api-reference/functions/use-pathname) : 현재 URL의 경로 이름을 읽는다. 예를 들어, `/dashboard/invoices`의 경우, 사용 경로명은 `/dashboard/invoices`를 반환한다.
+- [`useRouter`](https://nextjs.org/docs/app/api-reference/functions/use-router#userouter) : 클라이언트 구성 요소 내에서 경로 간 탐색을 활성화한다.
+
+### 9-2. Adding the search functionality
+
+검색의 첫 번째 순서는 유저의 입력 정보를 얻는 것으로, 클라이언트 컴포넌트에서 이루어진다. 때문에 검색 파일 최상단에 `use client`를 작성하여 클라이언트 컴포넌트임을 명시해야 이벤트 리스너나 훅을 사용할 수 있다.
+
+```tsx
+'use client'; // client component
+
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
+
+export default function Search({ placeholder }: { placeholder: string }) {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const { replace } = useRouter();
+
+  function handleSearch(term: string) {
+    console.log(`Searching... ${term}`);
+
+    const params = new URLSearchParams(searchParams);
+    if (term) {
+      params.set('query', term);
+    } else {
+      params.delete('query');
+    }
+    replace(`${pathname}?${params.toString()}`);
+  }
+
+  return (
+    <div className="relative flex flex-1 flex-shrink-0">
+      <label htmlFor="search" className="sr-only">
+        Search
+      </label>
+      <input
+        className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+        placeholder={placeholder}
+        onChange={(e) => {
+          handleSearch(e.target.value);
+        }}
+        defaultValue={searchParams.get('query')?.toString()}
+      />
+    </div>
+  );
+}
+```
+
+- `URLSearchParams`는 Web API 메서드로, 쿼리 파라미터를 `?page=1&query=a`와 같은 문자열로 만들어준다. `set`으로 검색어를 추가하고 `delete`로 비운다.
+- `usePathname`으로 가져온 경로에 `useRouter`의 `replace`를 이용하여 쿼리를 추가한다.
+- URL로 직접 이동했을 때 쿼리와 `input`을 동기화하려면 `defaultValue`를 설정한다.
+
+### 9-3. Best practice: Debouncing
+
+검색 기능을 최적화하자.
+
+```
+Searching... S
+Searching... St
+Searching... Ste
+Searching... Stev
+Searching... Steve
+Searching... Steven
+```
+
+지금은 입력할 때마다 요청을 보내 서버 부하를 유발한다. 입력 이벤트가 끝났을 때만 쿼리를 보내도록 `Debounce`로 이벤트를 제어한다. 여기서는 [`use-debounce`](https://www.npmjs.com/package/use-debounce) 라이브러리를 사용한다.
+
+```tsx
+// ...
+import { useDebouncedCallback } from 'use-debounce';
+
+// Inside the Search Component...
+const handleSearch = useDebouncedCallback((term) => {
+  console.log(`Searching... ${term}`);
+
+  const params = new URLSearchParams(searchParams);
+  if (term) {
+    params.set('query', term);
+  } else {
+    params.delete('query');
+  }
+  replace(`${pathname}?${params.toString()}`);
+}, 300);
+```
+
+`300ms`이내에 아무런 입력값이 없을 때 쿼리 요청을 보낸다. 띄엄띄엄 입력했을 때의 결과다.
+
+```
+Searching... ste
+Searching... steven
+```
+
+### 9-4. Adding pagination
+
+pagination도 비슷한 과정으로 진행한다.
+
+```tsx
+'use client';
+
+// ...
+import { usePathname, useSearchParams } from 'next/navigation';
+
+export default function Pagination({ totalPages }: { totalPages: number }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentPage = Number(searchParams.get('page')) || 1;
+
+  const createPageURL = (pageNumber: number | string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('page', pageNumber.toString());
+    return `${pathname}?${params.toString()}`;
+  };
+  // ...
+}
+```
+
+검색했을 때는 페이지가 `1`이 되도록 `Search`를 수정한다.
+
+```tsx
+export default function Search({ placeholder }: { placeholder: string }) {
+  // ...
+  const handleSearch = useDebouncedCallback((term) => {
+    // ...
+    params.set('page', '1');
+    // ...
+  }, 300);
+```
