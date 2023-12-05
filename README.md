@@ -948,3 +948,93 @@ export function DeleteInvoice({ id }: { id: string }) {
   );
 }
 ```
+
+## 11. Handling Errors
+
+예기치 못한 에러 발생은 사용자에게 안 좋은 경험을 심어준다. 거기에 에러 스택까지 보여준다면? 사용자에게도, 개발자에게도 최악의 페이지가 될 것이다. `Next.js`에서는 파일로 에러를 핸들링하는 기능을 제공한다. 에러 처리가 필요한 폴더 하위에 [`error.tsx`](https://nextjs.org/docs/app/api-reference/file-conventions/error)를 추가한다.
+
+```tsx
+'use client';
+
+import { useEffect } from 'react';
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    // Optionally log the error to an error reporting service
+    console.error(error);
+  }, [error]);
+
+  return (
+    <main className="flex h-full flex-col items-center justify-center">
+      <h2 className="text-center">Something went wrong!</h2>
+      <button
+        className="mt-4 rounded-md bg-blue-500 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-400"
+        onClick={
+          // Attempt to recover by trying to re-render the invoices route
+          () => reset()
+        }
+      >
+        Try again
+      </button>
+    </main>
+  );
+}
+```
+
+`error`는 `JS`의 에러 객체이고, `reset`은 에러 경계로 되돌리는 함수이다. `reset`을 실행하면 에러가 발생한 라우트의 리렌더링을 시도하도록 유도할 수 있다.
+
+`error.tsx`는 전체 에러를 핸들링하는 역할이라면, `not-found.tsx`는 404 error를 핸들링한다. `not-found`가 필요한 라우트 하위에 파일을 생성한다.
+
+![](https://nextjs.org/_next/image?url=%2Flearn%2Fdark%2Fnot-found-file.png&w=1920&q=75&dpl=dpl_AMSyfMpgLTgL1H5bxt6C3RVhhjQ4)
+
+```tsx
+// app/dashboard/invoices/[id]/edit/not-found.tsx
+import Link from 'next/link';
+import { FaceFrownIcon } from '@heroicons/react/24/outline';
+
+export default function NotFound() {
+  return (
+    <main className="flex h-full flex-col items-center justify-center gap-2">
+      <FaceFrownIcon className="w-10 text-gray-400" />
+      <h2 className="text-xl font-semibold">404 Not Found</h2>
+      <p>Could not find the requested invoice.</p>
+      <Link
+        href="/dashboard/invoices"
+        className="mt-4 rounded-md bg-blue-500 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-400"
+      >
+        Go Back
+      </Link>
+    </main>
+  );
+}
+```
+
+페이지에서는 `notfound()` 함수를 호출한다.
+
+```diff
+// app/dashboard/invoices/[id]/edit/page.tsx
+
+import { fetchInvoiceById, fetchCustomers } from '@/app/lib/data';
+import { updateInvoice } from '@/app/lib/actions';
++ import { notFound } from 'next/navigation';
+
+export default async function Page({ params }: { params: { id: string } }) {
+  const id = params.id;
+  const [invoice, customers] = await Promise.all([
+    fetchInvoiceById(id),
+    fetchCustomers(),
+  ]);
+
++  if (!invoice) {
++    notFound();
++  }
+
+  // ...
+}
+```
