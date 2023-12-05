@@ -762,3 +762,189 @@ export default function Search({ placeholder }: { placeholder: string }) {
     // ...
   }, 300);
 ```
+
+## 10. Mutating Data
+
+이전 장에서 CRUD 중 Read를 배웠으니 여기서는 Create, Update, Delete 기능을 추가한다.
+
+### 10-1. What are Server Actions?
+
+`React Server Actions`는 서버에서 실행되는 비동기 함수를 클라이언트나 서버에서 호출하여 사용하고, API 엔드포인트 없이 데이터 변경이 가능하다. `Next.js`가 서버 액션을 권장하는 이유는 **보안** 때문이다. 다양한 공격으로부터 데이터를 안전하게 보호하고 접근을 보장하는 효과적인 보안 솔루션을 제공한다고 한다. POST 요청, 암호화, 엄격한 입력 확인, 오류 메세지 해싱, 호스트 제한과 같은 기술을 통해 보안 목표를 달성하면서 앱의 안정성을 크게 향상시킨다.
+
+`JS`의 내장 API인 [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData)를 통해 `action` 속성으로 입력값을 수신할 수 있다.
+
+```tsx
+// Server Component
+export default function Page() {
+  // Action
+  async function create(formData: FormData) {
+    'use server';
+
+    // Logic to mutate data...
+  }
+
+  // Invoke the action using the "action" attribute
+  return <form action={create}>...</form>;
+}
+```
+
+`use server`는 서버 컴포넌트를 가리키는데, 서버 컴포넌트에서 서버 액션을 호출하면 클라이언트의 `JS`가 비활성화되어 있더라도 양식이 작동하는 이점이 있다.
+
+`Next.js`에서의 서버 액션은 [`Next.js Caching`](https://nextjs.org/docs/app/building-your-application/caching)과 긴밀하게 통합되어 있다. 서버 액션을 통해 양식이 제출되면 해당 액션을 사용하여 데이터를 변경할 수 있을 뿐만 아니라 `revalidatePath` 및 `revalidateTag`와 같은 API를 사용하여 관련 캐시의 유효성을 다시 검사할 수도 있다.
+
+### 10-2. Create a Server Action
+
+서버 액션에서 사용하는 함수를 모아둔 파일을 만들고 최상단에 `use server` 지시문을 작성한다. 해당 지시문이 추가된 파일에서 내보낸 함수는 서버 함수로 표시되어 클라이언트나 서버에서 다양하게 사용할 수 있다.
+
+```ts
+// app/lib/actions.ts
+'use server';
+
+export async function createInvoice(formData: FormData) {}
+```
+
+생성한 서버 액션 함수를 form에 전달한다.
+
+```tsx
+'use client';
+
+import { customerField } from '@/app/lib/definitions';
+import Link from 'next/link';
+import {
+  CheckIcon,
+  ClockIcon,
+  CurrencyDollarIcon,
+  UserCircleIcon,
+} from '@heroicons/react/24/outline';
+import { Button } from '@/app/ui/button';
+import { createInvoice } from '@/app/lib/actions';
+
+export default function Form({
+  customers,
+}: {
+  customers: customerField[];
+}) {
+  return (
+    <form action={createInvoice}>
+      // ...
+  )
+}
+```
+
+HTML의 `<form>`과 다른 점은 `action`에 URL이 아닌 함수가 들어갔다는 점이다. React에서는 특별한 속성으로 간주되어 액션을 호출할 수 있도록 그 위에 빌드됨을 의미한다. 서버 액션은 뒤에서 POST API 엔드포인트를 자동으로 생성한다.
+
+### 10-3. Validate and Revalidate and Redirect
+
+form을 제출하여 서버 액션이 실행되었을 때 다음과 같은 타입을 기댓값으로 원한다.
+
+```ts
+export type Invoice = {
+  id: string; // Will be created on the database
+  customer_id: string;
+  amount: number; // Stored in cents
+  status: 'pending' | 'paid';
+  date: string;
+};
+```
+
+하지만 `console.log(typeof rawFormData.amount)`를 해보면 `number`가 아닌 `string`으로 찍히는 것을 볼 수 있다. `input type="number"`를 했다손 쳐도 `FomData`에서는 `string`을 반환한다. 이러한 검증을 수동으로 할 수도 있지만, 여기서는 [`Zod`](https://zod.dev/) 라이브러리를 사용하여 검증한다.
+
+```ts
+'use server';
+
+import { z } from 'zod';
+
+const FormSchema = z.object({
+  id: z.string(),
+  customerId: z.string(),
+  amount: z.coerce.number(),
+  status: z.enum(['pending', 'paid']),
+  date: z.string(),
+});
+
+const CreateInvoice = FormSchema.omit({ id: true, date: true });
+
+export async function createInvoice(formData: FormData) {
+  const { customerId, amount, status } = CreateInvoice.parse({
+    customerId: formData.get('customerId'),
+    amount: formData.get('amount'),
+    status: formData.get('status'),
+  });
+  // ...
+}
+```
+
+데이터를 새로 생성하면 기존의 `invoices` 페이지가 stale한지 아닌지 검증해야 한다. 또한, 작성이 완료되었으므로 생성 페이지에서 `invoices` 페이지로 리다이렉트한다.
+
+```ts
+'use server';
+
+// ...
+
+export async function createInvoice(formData: FormData) {
+  const { customerId, amount, status } = CreateInvoice.parse({
+    customerId: formData.get('customerId'),
+    amount: formData.get('amount'),
+    status: formData.get('status'),
+  });
+  // ...
+  revalidatePath('/dashboard/invoices');
+  redirect('/dashboard/invoices');
+}
+```
+
+### 10-4. Updating an invoice
+
+`invoice`를 수정하기 위해서 개별 페이지를 만들어야 한다. `id`에 따라 보여지는 `invoice` 페이지가 다르므로 [Dynamic Routes](https://nextjs.org/docs/app/building-your-application/routing/dynamic-routes)로 개별 페이지를 구현한다. `invoices/[id]/edit/page.tsx` 경로로 파일을 만든다.
+
+![](https://nextjs.org/_next/image?url=%2Flearn%2Fdark%2Fedit-invoice-route.png&w=1920&q=75&dpl=dpl_8s8Dnm8T2UqYs4Sz3a1AK4vKuj5w)
+
+만약 `id`가 `1`인 `invoice`를 수정한다면 경로는 `dashboard/invoices/1/edit`이 될 것이다.
+
+`id`를 받아 업데이트하는 서버 액션을 만든다.
+
+```tsx
+// ...
+import { updateInvoice } from '@/app/lib/actions';
+
+export default function EditInvoiceForm({
+  invoice,
+  customers,
+}: {
+  invoice: InvoiceForm;
+  customers: CustomerField[];
+}) {
+  const updateInvoiceWithId = updateInvoice.bind(null, invoice.id);
+
+  return (
+    <form action={updateInvoiceWithId}>
+      <input type="hidden" name="id" value={invoice.id} />
+    </form>
+  );
+}
+```
+
+`bind`를 사용한 이유는 `action`에 id 인수를 담은 `updateInvoice(invoice.id)`를 사용할 수 없기 때문이다. 하지만 이렇게는 사용할 수 있더라. 이후 로직은 `Create`와 유사하다.
+
+### 10-5. Deleting an invoice
+
+Delete는 `id`를 받아 삭제 요청을 보내면 된다.
+
+```tsx
+import { deleteInvoice } from '@/app/lib/actions';
+
+// ...
+
+export function DeleteInvoice({ id }: { id: string }) {
+  const deleteInvoiceWithId = deleteInvoice.bind(null, id);
+
+  return (
+    <form action={deleteInvoiceWithId}>
+      <button className="rounded-md border p-2 hover:bg-gray-100">
+        <span className="sr-only">Delete</span>
+        <TrashIcon className="w-4" />
+      </button>
+    </form>
+  );
+}
+```
