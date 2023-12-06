@@ -1038,3 +1038,166 @@ export default async function Page({ params }: { params: { id: string } }) {
   // ...
 }
 ```
+
+## 12. Improving Accessibility
+
+접근성은 **장애인을 포함한 모든 사람이 사용할 수 있는 애플리케이션을 설계하고 구현하는 것**을 말한다. 참고 [web.dev - learn accessibility](https://web.dev/learn/accessibility/)
+
+### 12-1. Using the ESLint accessibility plugin in Next.js
+
+`Next.js`는 기본적으로 [`eslint-plugin-jsx-a11y`](https://www.npmjs.com/package/eslint-plugin-jsx-a11y)를 포함하고 있다. 이 플러그인은 `aria-*`, `alt`, `role` 등 접근성에 대한 이슈를 체크해준다. `"lint": "next lint"` 스크립트를 추가하여 검사할 수 있다. 예를 들어, 이미지의 `alt`가 없다면 검사했을 때의 경고 문구이다.
+
+```
+./app/ui/invoices/table.tsx
+29:23  Warning: Image elements must have an alt prop, either with meaningful text, or an empty string for decorative images.  jsx-a11y/alt-text
+```
+
+### 12-2. Improving form accessibility
+
+사용하고 있는 `form`에서는 접근성 향상을 위해 3가지를 이미 실천하고 있다.
+
+1. Semantic HTML : `div` 대신 `input`, `option` 등의 시멘틱 태그를 사용하여 사용자에게 양식을 탐색하고 이해하기 쉽게 만든다.
+2. Labelling : `label`과 `htmlFor`를 사용하면 사용자가 label를 클릭하여 해당 입력 필드에 집중할 수 있다.
+3. Focus Outline : 탭을 눌러 필드에 초점이 맞춰졌을 때 윤곽선이 표시되도록하여 키보드 및 화면 리더 사용자가 양식의 현재 위치를 이해하는 데 도움이 된다.
+
+일반적인 접근성 설정을 했지만, form validation을 충족하지는 못한다. 현재 비어 있는 양식을 제출하면 에러가 발생하기 때문이다.
+
+### 12-3. Form validation
+
+클라이언트 측에서 간단한 대응은 `input`에 `required` 속성을 추가하는 것이다.
+
+```diff
+<input
+  id="amount"
+  name="amount"
+  type="number"
+  placeholder="Enter USD amount"
+  className="peer block w-full rounded-md border border-gray-200 py-2 pl-10 text-sm outline-2 placeholder:text-gray-500"
++ required
+/>
+```
+
+일반적으로는 괜찮지만, dev tool에서 해당 요소의 `required` 속성을 지우면 검증이 먹히지 않는다. `Next.js`에서는 서버 측 대안을 제시한다. 서버 측 검증에서는
+
+- 데이터를 데이터베이스로 보내기 전에 데이터가 예상되는 형식인지 확인한다.
+- 악의적인 사용자가 클라이언트 측 유효성 검사를 우회하는 위험을 줄일 수 있다.
+- 유효한 데이터로 간주되는 데이터에 대한 신뢰할 수 있는 단일 소스를 확보한다.
+
+`useFormState`를 사용하여 서버 측 검증을 진행한다. 훅을 사용하므로 `use client`를 명시해 클라이언트 컴포넌트로 전환한다.
+
+```tsx
+'use client';
+
+// ...
+import { useFormState } from 'react-dom';
+```
+
+[`useFormState`](https://react.dev/reference/react-dom/hooks/useFormState)는 [useReducer](https://react.dev/reference/react/useReducer)와 유사한 실험적 기능이다. `action`과 `initialState`를 인자로 받고, `state`와 `dispatch`를 반환한다. `<form action={}>`에 `dispatch`를 주입한다.
+
+```tsx
+// ...
+import { useFormState } from 'react-dom';
+
+export default function Form({ customers }: { customers: CustomerField[] }) {
+  const initialState = { message: null, errors: {} };
+  const [state, dispatch] = useFormState(createInvoice, initialState);
+
+  return <form action={dispatch}>...</form>;
+}
+```
+
+`zod`를 이용해 검증할 데이터 스키마를 추가한다.
+
+```ts
+const FormSchema = z.object({
+  id: z.string(),
+  customerId: z.string({
+    invalid_type_error: 'Please select a customer.',
+  }),
+  amount: z.coerce
+    .number()
+    .gt(0, { message: 'Please enter an amount greater than $0.' }),
+  status: z.enum(['pending', 'paid'], {
+    invalid_type_error: 'Please select an invoice status.',
+  }),
+  date: z.string(),
+});
+```
+
+`useFormState`를 위해 `createInvoice`에 `prevState`를 추가한다. 사용하지 않더라도 `useFormState`가 필수로 요구하기 때문이다.
+
+```ts
+// This is temporary until @types/react-dom is updated
+export type State = {
+  errors?: {
+    customerId?: string[];
+    amount?: string[];
+    status?: string[];
+  };
+  message?: string | null;
+};
+
+export async function createInvoice(prevState: State, formData: FormData) {
+  // ...
+}
+```
+
+`zod`의 `parse` 대신 `safeParse`로 교체한다. `safeParse`는 성공 또는 실패 시의 객체를 반환하여 `try/catch` 구문에 넣지 않아도 유효성 검사를 처리할 수 있다.
+
+```ts
+export async function createInvoice(prevState: State, formData: FormData) {
+  // Validate form fields using Zod
+  const validatedFields = CreateInvoice.safeParse({
+    customerId: formData.get('customerId'),
+    amount: formData.get('amount'),
+    status: formData.get('status'),
+  });
+
+  // If form validation fails, return errors early. Otherwise, continue.
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create Invoice.',
+    };
+  }
+
+  // ...
+}
+```
+
+검증을 통과하지 못하면 `useFormState`의 `state`는 다음과 같은 에러 객체를 반환한다.
+
+```js
+{
+  errors: { customerId: Array(1), amount: Array(1), status: Array(1) },
+  message: "Missing Fields. Failed to Create Invoice."
+}
+```
+
+에러가 발생하면 화면에 표시하는 코드를 작성한다.
+
+```diff
+<form action={dispatch}>
+  {/* ... */}
+    <select
+      id="customer"
+      name="customerId"
+      className="peer block w-full rounded-md border border-gray-200 py-2 pl-10 text-sm outline-2 placeholder:text-gray-500"
+      defaultValue=""
++     aria-describedby="customer-error"
+    >
+    {/* ... */}
+    </select>
++   <div id="customer-error" aria-live="polite" aria-atomic="true">
++     {state.errors?.customerId &&
++       state.errors.customerId.map((error: string) => (
++         <p className="mt-2 text-sm text-red-500" key={error}>
++           {error}
++         </p>
++       ))}
++   </div>
+    {/* ... */}
+</form>
+```
+
+`aria-describedby="customer-error"`는 `id="customer-error"`와 관계를 형성해 오류가 발생하면 화면 판독기가 해당 설명을 읽게 된다. `aria-live="polite"`는 오류가 발생했음을 알릴 때 사용자를 방해하지 않고 유휴 상태일 때만 알린다.
