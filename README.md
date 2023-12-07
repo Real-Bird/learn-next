@@ -1201,3 +1201,266 @@ export async function createInvoice(prevState: State, formData: FormData) {
 ```
 
 `aria-describedby="customer-error"`는 `id="customer-error"`와 관계를 형성해 오류가 발생하면 화면 판독기가 해당 설명을 읽게 된다. `aria-live="polite"`는 오류가 발생했음을 알릴 때 사용자를 방해하지 않고 유휴 상태일 때만 알린다.
+
+## 13. Adding Authentication
+
+**Authentication(인증)**은 웹앱의 핵심 중 하나로, 실제 유저와 시스템이 바라는 유저가 같은지 확인하는 단계이다. 인증의 방법에는 여러 가지가 있다. 아이디와 비밀번호 입력 후 인증 코드를 발급한다거나 Google이나 Naver 등의 서드 파티를 이용한다. 혹은 외부 앱을 이용한 2단계 인증(2FA)으로 보안을 강화할 수도 있다. 이러한 인증 방법은 로그인 정보에 접근하더라도 고유 토큰 없이는 액세스할 수 없도록 한다.
+
+### 13-1. Authentication vs. Authorization
+
+웹 개발에서 Authentication과 Authorization은 비슷하지만 서로 다른 역할을 하는 개념이다.
+
+**Authentication(인증)**은 사용자가 자신이 말한 사람이 **맞는지** 확인하는 것이다.
+
+**Authorization(인가)**은 사용자의 신원이 확인되면 애플리케이션의 어떤 부분에 대한 **권한**이 있는지 결정하는 것이다.
+
+### 13-2. NextAuth.js
+
+여기서 사용하는 인증 라이브러리는 [`NextAuth.js`](https://authjs.dev/reference/nextjs)이다. 세션 관리, 로그인 및 로그아웃, 기타 인증과 관련된 복잡한 과정에 대한 솔루션을 제공한다. `Next.js @14`와 호환되는 버전을 `npm install next-auth@beta`로 설치한다.
+
+다음으로 `openssl rand -base64 32`로 비밀키를 생성하고, `.env`에 추가한다.
+
+```
+AUTH_SECRET=your-secret-key
+```
+
+루트 폴더에 `auth.config.ts` 파일을 생성해 `NextAuth`에 대한 옵션을 추가한다.
+
+```ts
+import type { NextAuthConfig } from 'next-auth';
+
+export const authConfig = {
+  pages: {
+    signIn: '/login',
+  },
+  callbacks: {
+    authorized({ auth, request: { nextUrl } }) {
+      const isLoggedIn = !!auth?.user;
+      const isOnDashboard = nextUrl.pathname.startsWith('/dashboard');
+      if (isOnDashboard) {
+        if (isLoggedIn) return true;
+        return false; // Redirect unauthenticated users to login page
+      } else if (isLoggedIn) {
+        return Response.redirect(new URL('/dashboard', nextUrl));
+      }
+      return true;
+    },
+  },
+  providers: [], // Add providers with an empty array for now
+} satisfies NextAuthConfig;
+```
+
+`pages` 옵션을 통해 로그인, 로그아웃, 오류 페이지 경로 등을 지정할 수 있다. `signIn: '/login'`을 추가하면 `NextAuth`의 기본 페이지가 아닌 커스텀 로그인 페이지로 리디렉션한다(고 한다. 뭔 소린지 모르겠다.).
+
+`callbacks`은 `Next.js`의 `middleware`를 통해 로그인 요청이 완료되기 전 권한이 있는지 확인하는 데 사용한다. `auth`는 유저의 session, `request` 속성 등이 들어있다.
+
+`providers`는 다양한 로그인 옵션을 나열하는 배열이다. `NextAuth`의 구성을 충족하기 위해 일단 빈 배열로 설정되어 있다.
+
+`authConfig` 객체를 가져올 `middleware.ts` 파일도 루트 폴더에 생성한다.
+
+```ts
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+
+export default NextAuth(authConfig).auth;
+
+export const config = {
+  // https://nextjs.org/docs/app/building-your-application/routing/middleware#matcher
+  matcher: ['/((?!api|_next/static|_next/image|.*\\.png$).*)'],
+};
+```
+
+`NextAuth` 객체를 초기화하고, `matcher`에 따라 `middleware`를 실행한다. 배열에 담긴 문자열은 `api`나 `_next/static`, `_next/image`, `.png`로 끝나는 경로를 제외하고 `middleware`를 실행한다는 의미이다. 이렇게 하면 미들웨어가 보호된 경로에서 인증이 확인될 때까지 렌더링을 하지 않아 성능 향상의 이점이 생긴다.
+
+패스워드는 보통 생성할 때 해싱하여 저장한다. 이 프로젝트에서는 `bcrypt` 패키지를 사용하여 해싱 처리했는데, 문제는 Node API에 의존하는 패키지이기 때문에 미들웨어에서는 실행할 수 없다는 점이다. 이를 위해 `authConfig` 객체를 퍼트리는 `auth.ts` 파일을 새로 만든다.
+
+```ts
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+});
+```
+
+`NextAuth`에 `providers` 옵션을 추가해야 한다. `providers`는 Google 또는 GitHub와 같은 다양한 로그인 옵션을 나열하는 배열이다. 여기서는 [Credentials provider](https://nextjs.org/learn/dashboard-app/adding-authentication)만 사용한다.
+
+```ts
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+import Credentials from 'next-auth/providers/credentials';
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  providers: [Credentials({})],
+});
+```
+
+`zod`를 사용하여 이메일과 비밀번호 유효성을 검사한 후 유저 정보를 확인하자.
+
+```ts
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+import Credentials from 'next-auth/providers/credentials';
+import { z } from 'zod';
+import { sql } from '@vercel/postgres';
+import type { User } from '@/app/lib/definitions';
+import bcrypt from 'bcrypt';
+
+async function getUser(email: string): Promise<User | undefined> {
+  try {
+    const user = await sql<User>`SELECT * FROM users WHERE email=${email}`;
+    return user.rows[0];
+  } catch (error) {
+    console.error('Failed to fetch user:', error);
+    throw new Error('Failed to fetch user.');
+  }
+}
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  providers: [
+    Credentials({
+      async authorize(credentials) {
+        const parsedCredentials = z
+          .object({ email: z.string().email(), password: z.string().min(6) })
+          .safeParse(credentials);
+        if (parsedCredentials.success) {
+          const { email, password } = parsedCredentials.data;
+          const user = await getUser(email);
+          if (!user) return null;
+
+          const passwordsMatch = await bcrypt.compare(password, user.password);
+
+          if (passwordsMatch) return user;
+        }
+        return null;
+      },
+    }),
+  ],
+});
+```
+
+로그인 `action`을 작성한 다음 form을 수정한다.
+
+```ts
+// lib/actions
+
+import { signIn } from '@/auth';
+import { AuthError } from 'next-auth';
+
+// ...
+
+export async function authenticate(
+  prevState: string | undefined,
+  formData: FormData,
+) {
+  try {
+    await signIn('credentials', formData);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      switch (error.type) {
+        case 'CredentialsSignin':
+          return 'Invalid credentials.';
+        default:
+          return 'Something went wrong.';
+      }
+    }
+    throw error;
+  }
+}
+```
+
+```tsx
+// login-form
+
+'use client';
+
+import { lusitana } from '@/app/ui/fonts';
+import {
+  AtSymbolIcon,
+  KeyIcon,
+  ExclamationCircleIcon,
+} from '@heroicons/react/24/outline';
+import { ArrowRightIcon } from '@heroicons/react/20/solid';
+import { Button } from '@/app/ui/button';
+import { useFormState, useFormStatus } from 'react-dom';
+import { authenticate } from '@/app/lib/actions';
+
+export default function LoginForm() {
+  const [errorMessage, dispatch] = useFormState(authenticate, undefined);
+
+  return (
+    <form action={dispatch} className="space-y-3">
+      <div className="flex-1 rounded-lg bg-gray-50 px-6 pb-4 pt-8">
+        <h1 className={`${lusitana.className} mb-3 text-2xl`}>
+          Please log in to continue.
+        </h1>
+        <div className="w-full">{/* ... */}</div>
+        <LoginButton />
+        <div
+          className="flex h-8 items-end space-x-1"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {errorMessage && (
+            <>
+              <ExclamationCircleIcon className="h-5 w-5 text-red-500" />
+              <p className="text-sm text-red-500">{errorMessage}</p>
+            </>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function LoginButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button className="mt-4 w-full" aria-disabled={pending}>
+      Log in <ArrowRightIcon className="ml-auto h-5 w-5 text-gray-50" />
+    </Button>
+  );
+}
+```
+
+로그아웃 기능도 추가한다.
+
+```tsx
+import Link from 'next/link';
+import NavLinks from '@/app/ui/dashboard/nav-links';
+import AcmeLogo from '@/app/ui/acme-logo';
+import { PowerIcon } from '@heroicons/react/24/outline';
+import { signOut } from '@/auth';
+
+export default function SideNav() {
+  return (
+    <div className="flex h-full flex-col px-3 py-4 md:px-2">
+      // ...
+      <div className="flex grow flex-row justify-between space-x-2 md:flex-col md:space-x-0 md:space-y-2">
+        <NavLinks />
+        <div className="hidden h-auto w-full grow rounded-md bg-gray-50 md:block"></div>
+        <form
+          action={async () => {
+            'use server';
+            await signOut();
+          }}
+        >
+          <button className="flex h-[48px] grow items-center justify-center gap-2 rounded-md bg-gray-50 p-3 text-sm font-medium hover:bg-sky-100 hover:text-blue-600 md:flex-none md:justify-start md:p-2 md:px-3">
+            <PowerIcon className="w-6" />
+            <div className="hidden md:block">Sign Out</div>
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+```
+
+`use server`를 최상단이 아닌 `action` 속성 내에 선언하는 게 신기했다. 이게 그 유명한 밈으로 탄생한 부분인 듯하다.
+
+![](https://media.licdn.com/dms/image/D4D12AQEZJHiY-2xb5w/article-cover_image-shrink_720_1280/0/1700390410238?e=1707350400&v=beta&t=8rnKQ49XVBsBa6FaYfV0Tw-E3su-v8YtfhZA35q_Ea0)
+
+아무튼 다 작성하고 나니 위 `authConfig`에서 궁금했던 `signIn: '/login'`의 정체를 알았다. 이것을 설정하지 않으면 비로그인 유저가 인증이 필요한 페이지로 접근했을 때 리디렉션하지 않고 `not-found`를 실행한다. 설정했다면 자동으로 로그인 페이지로 연결한다.
