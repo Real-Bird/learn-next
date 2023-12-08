@@ -1464,3 +1464,69 @@ export default function SideNav() {
 ![](https://media.licdn.com/dms/image/D4D12AQEZJHiY-2xb5w/article-cover_image-shrink_720_1280/0/1700390410238?e=1707350400&v=beta&t=8rnKQ49XVBsBa6FaYfV0Tw-E3su-v8YtfhZA35q_Ea0)
 
 아무튼 다 작성하고 나니 위 `authConfig`에서 궁금했던 `signIn: '/login'`의 정체를 알았다. 이것을 설정하지 않으면 비로그인 유저가 인증이 필요한 페이지로 접근했을 때 리디렉션하지 않고 `not-found`를 실행한다. 설정했다면 자동으로 로그인 페이지로 연결한다.
+
+## 14. Adding Metadata
+
+**SEO**와 콘텐츠 공유에 관련해서 웹앱의 `metadata`는 매우 중요한 요소이다. 최종장에서는 `metadata`에 대해서 학습한다.
+
+### 14-1. What is metadata?
+
+`metadata`는 웹 페이지에 대한 추가 세부 정보를 제공한다. 사용자에게는 표시되지 않지만, `<head>` 태그 내에 포함되어 백그라운드에서 동작한다. 이는 검색 엔진 등이 웹 페이지를 더 잘 이해하도록 돕는다. SEO를 향상시키는 데 중요한 역할을 하며, 적절한 metadata는 검색 엔진에서 웹 페이지의 순위를 높인다.
+
+`Next.js`가 제공하는 **Metadata API**에는 두 가지 방식이 있다. 하나는 `Config-based`로, **정적인 metadata 객체**를 export하거나 **동적으로 metadata를 생성하는 함수**를 `layout.tsx`나 `page.tsx`에서 export하는 방식이다. 다른 하나는 `File-based`로, `favicon.ico`, `opengraph-image.jpg`, `robots.txt`, `sitemap.xml` 등 특수한 목적의 이름을 가진 파일들을 사용한다. 두 방식을 사용하면 `Next.js`가 자동으로 적절한 `<head>` 요소를 생성한다.
+
+예시로, `/public` 폴더에 `favicon.ico`와 `opengraph-image.jpg` 파일이 들어있다. 이것을 `/app` 폴더로 옮기면 자동으로 `head`에 추가된다.
+
+`layout.tsx`나 `page.tsx` 파일 내에 `metadata` 객체를 포함할 수도 있다.
+
+```tsx
+// app/layout.tsx
+
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Acme Dashboard',
+  description: 'The official Next.js Course Dashboard, built with App Router.',
+  metadataBase: new URL('https://next-learn-dashboard.vercel.sh'),
+};
+
+export default function RootLayout() {
+  // ...
+}
+```
+
+특정 페이지에 추가하여 해당 페이지의 정보만 담을 수 있다.
+
+```tsx
+// dashboard/invoices
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Invoices | Acme Dashboard',
+};
+
+export default async function Page() {}
+```
+
+하지만 이렇게 입력하면 문제가 하나 있다. 회사명과 같은 주요 정보가 바뀌었을 때 모든 페이지의 metadata를 찾아 수정해야 한다. 그렇게 하는 대신 `title.template`을 사용하여 기본값을 정하고 페이지마다 다른 `title`을 부여할 수 있다.
+
+```tsx
+// app/layout.tsx
+
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: {
+    template: '%s | Acme Dashboard',
+    default: 'Acme Dashboard',
+  },
+  description: 'The official Next.js Learn Dashboard built with App Router.',
+  metadataBase: new URL('https://next-learn-dashboard.vercel.sh'),
+};
+
+// dashboard/invoices
+
+export const metadata: Metadata = {
+  title: 'Invoices',
+};
+```
